@@ -1,0 +1,110 @@
+import pandas_datareader.data as web
+import datetime
+from sklearn.preprocessing import StandardScaler
+from collections import deque
+import numpy as np
+from sklearn.model_selection import train_test_split
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.models import load_model
+
+#google is the target company
+start=datetime.datetime(2000,1,1)
+end=datetime.datetime(2021,9,1)
+df=web.DataReader('GOOGL', 'stooq', start, end)
+
+#data preprocessing
+def stock_price_LSTM_data_precessing(df, mem_days, pre_days)
+    df.dropna(inplace=True)
+    df.sort_index(inplace=True)
+    df['label']=df['Close'].shift(-pre_days)
+
+    scaler=StandardScaler()
+    sca_X=scaler.fit_transform(df.iloc[:,:-1])
+
+    #mem_days=5
+
+    deq=deque(maxlen=mem_days)
+
+    X=[]
+    for i in sca_X:
+        deq.append(list(i))
+        if len(deq)==mem_days:
+            X.append(list(deq))
+
+    X_lately=X[-pre_days:]
+    X=X[:-pre_days]
+
+    y=df['label'].values[mem_days-1:-pre_days]
+
+    X_train, X_test, y_train, y_test=train_test_split(X,y, test_size=0.2)
+    X=np.array(X)
+    y=np.array(y)
+    return X,y,X_lately
+
+#find the best LSTM
+pre_days=10
+mem_days=[5,10,15]
+lstm_layers=[1,2,3]
+dense_layers=[1,2,3]
+units=[16,32]
+
+
+for the_mem_days in mem_days:
+    for the_lstm_layers in lstm_layers:
+        for the_dense_layers in dense_layers:
+            for the_units in units:
+                
+                filepath='./models/{val_mape:.2f}_{epoch:02d}'+f'mem_{the_lstm_layers}_lstm_{the_lstm_layers}_dense_{the_dense_layers}_unit_{the_units}'
+                #callback, checkpoint
+                checkpoint=ModelCheckpoint(filepath=checkpoint_filepath, 
+                                          save_weights_only=False,
+                                          monitor='val_mape', 
+                                          mode='max',
+                                         save_best_only=True)
+
+                X_train, X_test, y_train, y_test=train_test_split(X,y, test_size=0.2, shuffle=False)                
+                X,y,X_lately=stock_price_LSTM_data_precessing(df,5,10)  
+                
+                model=Sequential()
+                model.add(LSTM(10,input_shape=X.shape[1:], activation='relu', return_sequences=True))
+                model.add(Dropout(0.1))
+                
+                for i in range(the_lstm_layers):
+
+                    model.add(LSTM(the_units, activation='relu', return_sequences=True))
+                    model.add(Dropout(0.1))
+
+                model.add(LSTM(the_units, activation='relu'))
+                model.add(Dropout(0.1))
+                
+                for i in range(the_dense_layers):
+
+                    model.add(Dense(the_units, activation='relu'))
+                    model.add(Dropout(0.1))
+
+                model.add(Dense(1))
+
+                model.compile(optimizer='adam', 
+                              loss='mse', 
+                              metrics=['mape'])
+
+                model.fit(X_train, y_train, batch_size=32, epochs=50, validation_data=(X_test, y_test),callbacks=[checkpoint])
+                
+
+
+
+#fill out with model's name
+best_model=load_model('./models/5.24_10_mem_5_lst_1_dense_1_unit_32')
+pre-best_model.predict(X_test)
+best_model.summary()
+best_model.evaluate(X_test, y_test)
+
+#compare the prediction vs real price
+import matplotlib.pyplot as plt
+df_time=df.index[-len(y_test):]
+plt.plot(df_time, y_test, color='red', label='price')
+plt.plot(df_time, pre, color='green', label='price')
+plt.show()
